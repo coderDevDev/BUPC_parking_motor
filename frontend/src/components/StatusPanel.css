@@ -1,0 +1,40 @@
+.status-panel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin-bottom: 30px;
+}
+
+.stat-item {
+  padding: 20px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-item h3 {
+  margin: 0 0 10px 0;
+  color: #666;
+}
+
+.stat-value {
+  font-size: 2em;
+  font-weight: bold;
+}
+
+.total {
+  background: #f8f9fa;
+}
+
+.available {
+  background: #d4edda;
+  color: #155724;
+}
+
+.occupied {
+  background: #f8d7da;
+  color: #721c24;
+}
