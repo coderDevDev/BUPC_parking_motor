@@ -2,23 +2,47 @@ import React, { useEffect, useState, useRef } from 'react';
 import './ParkingLot.css';
 
 const SOCKET_URL = 'http://localhost:5000';
-const POLLING_INTERVAL = 50; // 50ms polling interval
+const POLLING_INTERVAL = 33; // ~30 FPS
 
 const ParkingLot = ({ onStatusUpdate }) => {
   const [spaces, setSpaces] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [stats, setStats] = useState({ available: 0, total: 0 });
   const videoRef = useRef(null);
   const pollingRef = useRef(null);
+  const frameQueueRef = useRef([]);
+  const renderTimeRef = useRef(0);
+  const fpsRef = useRef(0);
+  const lastFrameTimeRef = useRef(performance.now());
+
+  const renderNextFrame = () => {
+    if (frameQueueRef.current.length > 0 && videoRef.current) {
+      const currentTime = performance.now();
+      const elapsed = currentTime - renderTimeRef.current;
+
+      if (elapsed >= 1000 / 30) {
+        // Limit to 30 FPS
+        const frame = frameQueueRef.current.shift();
+        videoRef.current.src = frame;
+        renderTimeRef.current = currentTime;
+
+        // Calculate actual FPS
+        const frameTime = currentTime - lastFrameTimeRef.current;
+        fpsRef.current = Math.round(1000 / frameTime);
+        lastFrameTimeRef.current = currentTime;
+      }
+
+      requestAnimationFrame(renderNextFrame);
+    }
+  };
 
   const startPolling = async () => {
     try {
-      // Start detection
       await fetch(`${SOCKET_URL}/api/start-detection`);
       console.log('Detection started');
       setLoading(false);
 
-      // Start polling for frames
       const pollFrame = async () => {
         try {
           const response = await fetch(`${SOCKET_URL}/api/frame`);
@@ -26,11 +50,23 @@ const ParkingLot = ({ onStatusUpdate }) => {
 
           const data = await response.json();
 
-          if (videoRef.current && data.frame) {
-            videoRef.current.src = `data:image/jpeg;base64,${data.frame}`;
+          if (data.frame) {
+            frameQueueRef.current.push(`data:image/jpeg;base64,${data.frame}`);
+            if (frameQueueRef.current.length === 1) {
+              requestAnimationFrame(renderNextFrame);
+            }
+            // Limit queue size
+            if (frameQueueRef.current.length > 3) {
+              frameQueueRef.current = frameQueueRef.current.slice(-3);
+            }
           }
 
           setSpaces(data.spaces || {});
+          setStats({
+            available: data.available_spaces || 0,
+            total: data.total_spaces || 0
+          });
+
           if (onStatusUpdate) {
             onStatusUpdate({
               total: data.total_spaces,
@@ -43,7 +79,7 @@ const ParkingLot = ({ onStatusUpdate }) => {
         } catch (error) {
           console.error('Polling error:', error);
           setError('Connection error. Retrying...');
-          pollingRef.current = setTimeout(pollFrame, 1000); // Retry after 1s on error
+          pollingRef.current = setTimeout(pollFrame, 1000);
         }
       };
 
@@ -59,10 +95,10 @@ const ParkingLot = ({ onStatusUpdate }) => {
     startPolling();
 
     return () => {
-      // Cleanup
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
       }
+      frameQueueRef.current = [];
       fetch(`${SOCKET_URL}/api/stop-detection`).catch(console.error);
     };
   }, []);
@@ -92,14 +128,12 @@ const ParkingLot = ({ onStatusUpdate }) => {
             }, 1000);
           }}
         />
-      </div>
-      <div className="parking-grid">
-        {Object.entries(spaces).map(([id, space]) => (
-          <div key={id} className={`parking-space ${space.status}`}>
-            <span className="space-id">Space {id}</span>
-            <span className="space-status">{space.status}</span>
+        <div className="status-overlay">
+          <div className="status-text">
+            Available: {stats.available} / {stats.total}
           </div>
-        ))}
+          <div className="fps-counter">{fpsRef.current} FPS</div>
+        </div>
       </div>
     </div>
   );

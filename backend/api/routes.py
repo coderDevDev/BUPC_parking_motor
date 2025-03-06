@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, Response
 from backend.detection.motion_detector import MotionDetector
+from backend.detection.colors import COLOR_GREEN, COLOR_WHITE, COLOR_BLUE
 import yaml
 import cv2
 import threading
@@ -41,12 +42,19 @@ def detection_loop():
             print(f"Error: Could not open video file: {video_file}")
             return
 
+        # Optimize video capture settings
         cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 3)
         fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_delay = 1.0 / fps
+        frame_delay = 1.0 / 30  # Lock to 30 FPS for smooth playback
         
         frame_count = 0
         last_time = time.time()
+        detection_interval = 2  # Process every 2nd frame for detection
+        encode_params = [
+            int(cv2.IMWRITE_JPEG_QUALITY), 85,
+            int(cv2.IMWRITE_JPEG_OPTIMIZE), 1
+        ]
 
         while is_detecting:
             try:
@@ -54,7 +62,7 @@ def detection_loop():
                 elapsed = current_time - last_time
                 
                 if elapsed < frame_delay:
-                    time.sleep(frame_delay - elapsed)
+                    time.sleep(max(0, frame_delay - elapsed))
                     continue
 
                 success, frame = cap.read()
@@ -62,22 +70,55 @@ def detection_loop():
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 400)
                     continue
 
-                # Process frame and get parking status
-                spaces_status = detector.process_frame(frame)
-                
-                # Convert frame to base64
-                _, buffer = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
-                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                # Resize frame for better performance while maintaining quality
+                height, width = frame.shape[:2]
+                if width > 1280:  # Only resize if larger than 1280px
+                    scale = 1280 / width
+                    new_width = 1280
+                    new_height = int(height * scale)
+                    frame = cv2.resize(frame, (new_width, new_height), 
+                                    interpolation=cv2.INTER_AREA)
 
-                # Update current frame and status
-                current_frame = frame_base64
-                current_status = {
-                    'frame': frame_base64,
-                    'spaces': spaces_status,
-                    'total_spaces': detector.total_spaces,
-                    'available_spaces': detector.free_spaces,
-                    'occupied_spaces': detector.occupied_spaces
-                }
+                # Process detection every few frames
+                if frame_count % detection_interval == 0:
+                    spaces_status = detector.process_frame(frame.copy())
+                    current_status = {
+                        'spaces': spaces_status,
+                        'total_spaces': detector.total_spaces,
+                        'available_spaces': detector.free_spaces,
+                        'occupied_spaces': detector.occupied_spaces
+                    }
+
+                # Draw parking space markers on the frame
+                frame_with_markers = frame.copy()
+                for idx, p in enumerate(detector.coordinates_data):
+                    coordinates = detector._coordinates(p)
+                    color = COLOR_GREEN if detector.statuses[idx] else COLOR_BLUE
+                    cv2.drawContours(frame_with_markers, [coordinates], -1, color, 2)
+                    moments = cv2.moments(coordinates)
+                    center = (
+                        int(moments["m10"] / moments["m00"]),
+                        int(moments["m01"] / moments["m00"])
+                    )
+                    cv2.putText(
+                        frame_with_markers,
+                        str(p["id"] + 1),
+                        center,
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5,
+                        COLOR_WHITE,
+                        2
+                    )
+
+                # Convert frame to base64 efficiently
+                _, buffer = cv2.imencode('.jpg', frame_with_markers, encode_params)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                # Update current frame and merge with latest status
+                if current_status:
+                    current_status['frame'] = frame_base64
+                else:
+                    current_status = {'frame': frame_base64}
                 
                 frame_count += 1
                 if frame_count % 100 == 0:
