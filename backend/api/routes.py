@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, Response
+from flask import Blueprint, jsonify, Response, request
 from backend.detection.motion_detector import MotionDetector
 from backend.detection.colors import COLOR_GREEN, COLOR_WHITE, COLOR_BLUE
 import yaml
@@ -7,8 +7,10 @@ import threading
 import base64
 import time
 import os
+from datetime import datetime
+from ..models import db, VehicleEntry
 
-api_bp = Blueprint('api', __name__)
+api = Blueprint('api', __name__)
 
 # Initialize detector globally
 detector = None
@@ -137,13 +139,13 @@ def detection_loop():
             cap.release()
         print("Detection stopped")
 
-@api_bp.route('/frame')
+@api.route('/frame')
 def get_frame():
     if current_status:
         return jsonify(current_status)
     return jsonify({'error': 'No frame available'}), 404
 
-@api_bp.route('/parking-status')
+@api.route('/parking-status')
 def get_parking_status():
     detector = init_detector()
     return jsonify({
@@ -156,7 +158,7 @@ def get_parking_status():
         }
     })
 
-@api_bp.route('/start-detection')
+@api.route('/start-detection')
 def start_detection():
     global detection_thread, is_detecting
     if not is_detecting:
@@ -165,10 +167,91 @@ def start_detection():
         detection_thread.start()
     return jsonify({"status": "success", "message": "Detection started"})
 
-@api_bp.route('/stop-detection')
+@api.route('/stop-detection')
 def stop_detection():
     global is_detecting
     is_detecting = False
     if detection_thread:
         detection_thread.join()
     return jsonify({"status": "success", "message": "Detection stopped"})
+
+@api.route('/vehicle-entries', methods=['GET'])
+def get_entries():
+    entries = VehicleEntry.query.order_by(VehicleEntry.created_at.desc()).all()
+    return jsonify([{
+        'id': entry.id,
+        'ticketNumber': entry.ticket_number,
+        'plateNumber': entry.plate_number,
+        'vehicleType': entry.vehicle_type,
+        'entryTime': entry.entry_time.strftime('%H:%M'),
+        'date': entry.entry_time.strftime('%Y-%m-%d'),
+        'parkingSlot': entry.parking_slot,
+        'driverName': entry.driver_name,
+        'contactNumber': entry.contact_number,
+        'status': entry.status
+    } for entry in entries])
+
+@api.route('/vehicle-entries', methods=['POST'])
+def create_entry():
+    data = request.json
+    
+    new_entry = VehicleEntry(
+        ticket_number=data['ticketNumber'],
+        plate_number=data['plateNumber'],
+        vehicle_type=data['vehicleType'],
+        entry_time=datetime.now(),
+        parking_slot=data['parkingSlot'],
+        driver_name=data['driverName'],
+        contact_number=data['contactNumber']
+    )
+    
+    try:
+        db.session.add(new_entry)
+        db.session.commit()
+        return jsonify({
+            'message': 'Entry created successfully',
+            'entry': {
+                'id': new_entry.id,
+                'ticketNumber': new_entry.ticket_number,
+                'plateNumber': new_entry.plate_number,
+                'vehicleType': new_entry.vehicle_type,
+                'entryTime': new_entry.entry_time.strftime('%H:%M'),
+                'date': new_entry.entry_time.strftime('%Y-%m-%d'),
+                'parkingSlot': new_entry.parking_slot,
+                'driverName': new_entry.driver_name,
+                'contactNumber': new_entry.contact_number,
+                'status': new_entry.status
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+@api.route('/vehicle-entries/<int:entry_id>', methods=['PUT'])
+def update_entry(entry_id):
+    entry = VehicleEntry.query.get_or_404(entry_id)
+    data = request.json
+    
+    try:
+        if 'status' in data:
+            entry.status = data['status']
+            if data['status'] == 'Completed':
+                entry.exit_time = datetime.now()
+        
+        db.session.commit()
+        return jsonify({'message': 'Entry updated successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400
+
+@api.route('/vehicle-entries/<int:entry_id>', methods=['DELETE'])
+def delete_entry(entry_id):
+    entry = VehicleEntry.query.get_or_404(entry_id)
+    
+    try:
+        db.session.delete(entry)
+        db.session.commit()
+        return jsonify({'message': 'Entry deleted successfully'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 400

@@ -1,3 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .stat-card {
+    @apply p-6 rounded-2xl shadow-sm border border-gray-100 text-center transition-all hover:shadow-md;
+  }
+
+  .stat-title {
+    @apply text-gray-500 text-sm font-medium mb-2;
+  }
+
+  .stat-value {
+    @apply text-4xl font-bold text-gray-800;
+  }
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
