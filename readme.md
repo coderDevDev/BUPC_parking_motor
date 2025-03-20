@@ -18,4 +18,13 @@ pip install python-engineio==4.2.1 python-socketio==5.4.0
 
 
 cd parking_system
-python -m backend.app
+1. python -m backend.app
+
+
+cd parking_system/frontend
+1. npm install
+2. npm run dev
+
+
+
+

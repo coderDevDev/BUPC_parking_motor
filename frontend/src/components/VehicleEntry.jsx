@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import {
   Car,
@@ -11,13 +11,18 @@ import {
   ChevronDown,
   Edit,
   Trash2,
-  ParkingSquare
+  ParkingSquare,
+  Printer
 } from 'lucide-react';
 import Ticket from './Ticket';
+import Receipt from './Receipt';
+import { useReactToPrint } from 'react-to-print';
+import { createPortal } from 'react-dom';
+import { API_URL } from '../config';
 
 const VehicleEntry = ({ parkingStats }) => {
+  // console.log('Parking Stats:', parkingStats); // For debugging
 
-  console.log({ parkingStats })
   const [vehicleData, setVehicleData] = useState({
     plateNumber: '',
     vehicleType: 'motorcycle',
@@ -34,19 +39,67 @@ const VehicleEntry = ({ parkingStats }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Update available slots when parkingStats changes
+  // Add state to track real-time parking status
+  const [parkingStatus, setParkingStatus] = useState({
+    total: parkingStats?.total || 0,
+    available: parkingStats?.available || 0,
+    occupied: parkingStats?.occupied || 0
+  });
+
+  const receiptRef = useRef(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [printData, setPrintData] = useState(null);
+
+  const handlePrint = useReactToPrint({
+    content: () => receiptRef.current,
+    onBeforeGetContent: () => {
+      return new Promise((resolve) => {
+        setIsPrinting(true);
+        resolve();
+      });
+    },
+    onAfterPrint: () => {
+      setIsPrinting(false);
+      setPrintData(null);
+    },
+    onPrintError: (error) => {
+      console.error('Print failed:', error);
+      setIsPrinting(false);
+      alert('Failed to print receipt. Please try again.');
+    }
+  });
+
+  // Update parking status when parkingStats changes
   useEffect(() => {
-    // Get all occupied slots from current entries
-    const occupiedSlots = new Set(entries.map(entry => entry.parkingSlot));
+    if (parkingStats) {
+      setParkingStatus({
+        total: parkingStats.total,
+        available: parkingStats.available,
+        occupied: parkingStats.occupied
+      });
+    }
+  }, [parkingStats]);
 
-    // Generate array of all slots (1 to total)
-    const allSlots = Array.from({ length: parkingStats.total }, (_, i) => i + 1);
+  // Update availableSlots based on parkingStatus
+  useEffect(() => {
+    if (parkingStatus.total > 0) {
+      // Get all occupied slots from current entries
+      const occupiedSlots = new Set(entries.map(entry => entry.parkingSlot));
 
-    // Filter out occupied slots to get available ones
-    const availableSlotNumbers = allSlots.filter(slot => !occupiedSlots.has(slot));
+      // Generate array of all slots (1 to total)
+      const allSlots = Array.from(
+        { length: parkingStatus.total },
+        (_, i) => i + 1
+      );
 
-    setAvailableSlots(availableSlotNumbers);
-  }, [parkingStats, entries]);
+      // Filter out occupied slots to get available ones
+      const availableSlotNumbers = allSlots.filter(
+        slot => !occupiedSlots.has(slot)
+      );
+
+      setAvailableSlots(availableSlotNumbers);
+    }
+  }, [parkingStatus.total, entries]);
 
   // Fetch entries on component mount
   useEffect(() => {
@@ -55,7 +108,7 @@ const VehicleEntry = ({ parkingStats }) => {
 
   const fetchEntries = async () => {
     try {
-      const response = await fetch('/api/vehicle-entries');
+      const response = await fetch(`${API_URL}/api/vehicle-entries`);
       const data = await response.json();
       setEntries(data);
       setLoading(false);
@@ -68,25 +121,24 @@ const VehicleEntry = ({ parkingStats }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (parkingStats.available === 0) {
+    if (parkingStatus.available === 0) {
       alert('No parking slots available!');
       return;
     }
 
     const ticketNumber = Math.random().toString(36).substr(2, 9).toUpperCase();
-    const assignedSlot = availableSlots[0];
     const currentDate = new Date();
 
     const newTicket = {
       ticketNumber,
       ...vehicleData,
-      parkingSlot: assignedSlot,
+      parkingSlot: 1,
       entryTime: currentDate.toLocaleTimeString(),
       date: currentDate.toLocaleDateString(),
     };
 
     try {
-      const response = await fetch('/api/vehicle-entries', {
+      const response = await fetch(`${API_URL}/api/vehicle-entries`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -100,18 +152,27 @@ const VehicleEntry = ({ parkingStats }) => {
 
       const data = await response.json();
       setEntries([data.entry, ...entries]);
-      setTicketData(newTicket);
-      setShowTicket(true);
 
-      // Reset form
-      setVehicleData({
-        plateNumber: '',
-        vehicleType: 'motorcycle',
-        entryTime: '',
-        date: '',
-        driverName: '',
-        contactNumber: ''
-      });
+      handlePrintEntry(data.entry);
+      // setTicketData(newTicket);
+      // setShowTicket(true);
+
+      // // Wait for ticket data to be set before printing
+      // setTimeout(() => {
+      //   if (receiptRef.current) {
+      //     handlePrint();
+      //   }
+      // }, 100);
+
+      // // Reset form
+      // setVehicleData({
+      //   plateNumber: '',
+      //   vehicleType: 'motorcycle',
+      //   entryTime: '',
+      //   date: '',
+      //   driverName: '',
+      //   contactNumber: ''
+      // });
     } catch (err) {
       alert('Failed to create entry: ' + err.message);
     }
@@ -123,7 +184,7 @@ const VehicleEntry = ({ parkingStats }) => {
     }
 
     try {
-      const response = await fetch(`/api/vehicle-entries/${entryId}`, {
+      const response = await fetch(`${API_URL}/api/vehicle-entries/${entryId}`, {
         method: 'DELETE',
       });
 
@@ -139,7 +200,7 @@ const VehicleEntry = ({ parkingStats }) => {
 
   const handleStatusUpdate = async (entryId, newStatus) => {
     try {
-      const response = await fetch(`/api/vehicle-entries/${entryId}`, {
+      const response = await fetch(`${API_URL}/api/vehicle-entries/${entryId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -176,10 +237,57 @@ const VehicleEntry = ({ parkingStats }) => {
     console.log('Printing ticket:', ticketData);
   };
 
+  const printReceipt = async (data) => {
+    try {
+      console.log("Sending print data:", data);
+
+
+
+      const response = await fetch(`${API_URL}/api/print`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+
+
+      const result = await response.json();
+      console.log("Print response:", result);
+
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+
+      alert('Receipt printed successfully!');
+    } catch (error) {
+      console.error('Print error:', error);
+      alert(`Failed to print receipt: ${error.message}`);
+    }
+  };
+
+  const handlePrintEntry = (entry) => {
+    console.log("Print entry data:", entry); // Debug log
+
+    const printData = {
+      ticketNumber: entry.ticketNumber,
+      date: entry.date,
+      entryTime: entry.entryTime,
+      plateNumber: entry.plateNumber,
+      vehicleType: entry.vehicleType,
+      parkingSlot: entry.parkingSlot,
+      driverName: entry.driverName || 'N/A',
+      contactNumber: entry.contactNumber || 'N/A'
+    };
+
+    printReceipt(printData);
+  };
+
   return (
     <div className="space-y-8">
       {/* Parking Status Alert */}
-      {parkingStats.available === 0 ? (
+      {parkingStatus.available === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -202,10 +310,10 @@ const VehicleEntry = ({ parkingStats }) => {
             </div>
             <div>
               <p className="text-green-700">
-                {parkingStats.available} parking {parkingStats.available === 1 ? 'slot' : 'slots'} available
+                {parkingStatus.available} parking {parkingStatus.available === 1 ? 'slot' : 'slots'} available
               </p>
               <p className="text-sm text-green-600">
-                Total: {parkingStats.total} | Occupied: {parkingStats.occupied}
+                Total: {parkingStatus.total} | Occupied: {parkingStatus.occupied}
               </p>
             </div>
           </div>
@@ -370,15 +478,15 @@ const VehicleEntry = ({ parkingStats }) => {
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Total Slots:</span>
-                  <span className="font-medium">{parkingStats.total}</span>
+                  <span className="font-medium">{parkingStatus.total}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Occupied:</span>
-                  <span className="font-medium text-orange-600">{parkingStats.occupied}</span>
+                  <span className="font-medium text-orange-600">{parkingStatus.occupied}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-gray-600">Available:</span>
-                  <span className="font-medium text-green-600">{parkingStats.available}</span>
+                  <span className="font-medium text-green-600">{parkingStatus.available}</span>
                 </div>
               </div>
             </div>
@@ -488,14 +596,16 @@ const VehicleEntry = ({ parkingStats }) => {
                   <td className="py-4 px-4">
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => handleStatusUpdate(entry.id, entry.status === 'Active' ? 'Completed' : 'Active')}
+                        onClick={() => handlePrintEntry(entry)}
                         className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-800"
+                        title="Print Receipt"
                       >
-                        <Edit size={16} className="text-gray-500 hover:text-primary" />
+                        <Printer size={16} className="text-gray-500 hover:text-primary" />
                       </button>
                       <button
                         onClick={() => handleDelete(entry.id)}
                         className="p-1 hover:bg-gray-100 rounded dark:hover:bg-gray-800"
+                        title="Delete Entry"
                       >
                         <Trash2 size={16} className="text-gray-500 hover:text-red-500" />
                       </button>
@@ -531,6 +641,17 @@ const VehicleEntry = ({ parkingStats }) => {
           onClose={() => setShowTicket(false)}
         />
       )}
+
+      {/* Receipt component - always mounted but hidden */}
+      <div style={{ position: 'fixed', left: '-9999px' }}>
+        {(isPrinting || printData) && (
+          <Receipt
+            ref={receiptRef}
+            data={printData}
+            isPrinting={isPrinting}
+          />
+        )}
+      </div>
     </div>
   );
 };

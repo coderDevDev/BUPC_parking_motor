@@ -11,7 +11,11 @@ const Ticket = ({ ticketData, onPrint, onClose }) => {
     >
       <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
         {/* Ticket Preview */}
+
+
+
         <div className="p-6 space-y-6">
+
           <div className="text-center border-b pb-6">
             <h2 className="text-2xl font-bold">Parking Ticket</h2>
             <p className="text-gray-500">#{ticketData.ticketNumber}</p>
