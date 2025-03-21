@@ -9,7 +9,7 @@ class Config:
     CAMERA_PASSWORD = "123456789"
     CAMERA_IP = "172.20.10.11"
     CAMERA_PORT = "554"
-    CAMERA_STREAM = "stream1"
+    CAMERA_STREAM = "stream2"
 
     # Construct the RTSP URL with proper URL encoding
     VIDEO_PATH = f"rtsp://{CAMERA_USERNAME}:{CAMERA_PASSWORD}@{CAMERA_IP}:{CAMERA_PORT}/{CAMERA_STREAM}"

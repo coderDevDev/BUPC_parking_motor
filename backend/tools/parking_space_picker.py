@@ -258,7 +258,7 @@ class ParkingSpacePicker:
 
 if __name__ == "__main__":
     # Get first frame from video/RTSP stream
-    video_source = "rtsp://matthew:123456789@172.20.10.11:554/stream1"
+    video_source = "rtsp://matthew:123456789@172.20.10.11:554/stream2"
     cap = cv2.VideoCapture(video_source)
     
     if not cap.isOpened():

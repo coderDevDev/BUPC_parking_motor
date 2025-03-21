@@ -68,7 +68,7 @@ def draw_parking_spots(image, spots):
 
 def main():
     # Get video frame
-    video_source = "rtsp://MirandaFam@123:MirandaFam@123@192.168.1.4:554/stream1"
+    video_source = "rtsp://MirandaFam@123:MirandaFam@123@192.168.1.4:554/stream2"
     cap = cv2.VideoCapture(video_source)
     
     if not cap.isOpened():

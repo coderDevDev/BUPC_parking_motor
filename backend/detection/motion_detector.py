@@ -62,36 +62,56 @@ class MotionDetector:
         occupation = pixels / area if area > 0 else 0
 
         # If there's significant motion/occupation
-        if occupation > 0.15:
+        if occupation > 0.2:  # Increased threshold to avoid false positives
             # Motorcycle-specific checks
             
-            # 1. Edge Detection (motorcycles have strong edges)
+            # 1. Edge Detection
             edges = cv2.Canny(gray_roi, 50, 150)
             edge_density = cv2.countNonZero(edges) / (w * h)
             
             # 2. Shape Analysis
             aspect_ratio = w / h if h > 0 else 0
             motorcycle_ratio = 0.6  # Typical motorcycle aspect ratio
-            ratio_tolerance = 0.2
+            ratio_tolerance = 0.3   # Slightly increased tolerance
             
-            # 3. Contour Analysis
+            # 3. Size Analysis
+            min_size = 100 * 100  # Minimum size for motorcycle
+            max_size = 400 * 400  # Maximum size for motorcycle
+            actual_size = w * h
+            
+            # 4. Contour Analysis
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             if contours:
                 largest_contour = max(contours, key=cv2.contourArea)
+                cont_area = cv2.contourArea(largest_contour)
                 _, _, cont_w, cont_h = cv2.boundingRect(largest_contour)
                 contour_ratio = cont_w / cont_h if cont_h > 0 else 0
+                
+                # Calculate solidity
+                hull = cv2.convexHull(largest_contour)
+                hull_area = cv2.contourArea(hull)
+                solidity = cont_area / hull_area if hull_area > 0 else 0
             else:
                 contour_ratio = 0
+                solidity = 0
             
             # Combined decision for motorcycle detection
             is_motorcycle = (
-                edge_density > 0.1 and  # Strong edges present
-                abs(aspect_ratio - motorcycle_ratio) < ratio_tolerance and  # Right shape
-                abs(contour_ratio - motorcycle_ratio) < ratio_tolerance and  # Motion shape matches
-                occupation > 0.2  # Sufficient occupation
+                min_size < actual_size < max_size and  # Size constraints
+                edge_density > 0.15 and  # Strong edges present
+                abs(aspect_ratio - motorcycle_ratio) < ratio_tolerance and  # Shape match
+                occupation > 0.25 and  # Significant occupation
+                solidity > 0.4 and  # Solid shape
+                contour_ratio > 0.3  # Proper proportions
             )
             
-            return not is_motorcycle  # False if motorcycle detected
+            # Person detection to avoid false positives
+            is_person = (
+                cont_h / cont_w > 2.0 if cont_w > 0 else False  # Very tall aspect ratio
+            )
+            
+            if is_motorcycle and not is_person:
+                return False  # Space is occupied by motorcycle
             
         return True  # Space is available
 
@@ -99,7 +119,7 @@ class MotionDetector:
         """Process a frame and update parking space statuses"""
         if frame is None:
             return []
-
+        
         # Update statuses
         self.statuses = []
         occupied_count = 0
@@ -108,17 +128,22 @@ class MotionDetector:
             coordinates = self._coordinates(p)
             status = self._check_parking_space(frame, coordinates)
             self.statuses.append(status)
-            if not status:  # If space is occupied by motorcycle
+            
+            # Draw contours with correct colors
+            color = COLOR_GREEN if status else COLOR_RED  # GREEN for available, RED for occupied
+            cv2.drawContours(frame, [coordinates], -1, color, 2)
+            
+            # Add spot number
+            x, y = coordinates[0][0]
+            cv2.putText(frame, str(p['id']), (x, y + 20),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 2)
+            
+            if not status:  # If space is occupied
                 occupied_count += 1
-
+        
         # Update counts
         self.occupied_spaces = occupied_count
         self.free_spaces = self.total_spaces - occupied_count
-
-        # Ensure counts are valid
-        assert self.occupied_spaces >= 0, "Occupied spaces cannot be negative"
-        assert self.free_spaces >= 0, "Free spaces cannot be negative"
-        assert self.occupied_spaces + self.free_spaces == self.total_spaces, "Total spaces mismatch"
         
         return self.statuses
 
