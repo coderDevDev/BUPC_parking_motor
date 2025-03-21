@@ -5,9 +5,9 @@ class Config:
     
     # Video Source Configuration
     # Properly format the RTSP URL
-    CAMERA_USERNAME = "MirandaFam@123"
-    CAMERA_PASSWORD = "MirandaFam@123"
-    CAMERA_IP = "192.168.1.4"
+    CAMERA_USERNAME = "matthew"
+    CAMERA_PASSWORD = "123456789"
+    CAMERA_IP = "172.20.10.11"
     CAMERA_PORT = "554"
     CAMERA_STREAM = "stream1"
 

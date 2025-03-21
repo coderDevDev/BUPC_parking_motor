@@ -6,9 +6,36 @@ import os
 #  C:\DexDev\my_Small_projects\2025\working_parking_lot\parking_system> python -m backend.tools.parking_space_picker
 class ParkingSpacePicker:
     def __init__(self, image_path):
+        # Read the image
         self.image = cv2.imread(image_path)
         if self.image is None:
             raise Exception("Could not load image")
+            
+        # Set default window size
+        screen_width = 1280  # Default width
+        screen_height = 720  # Default height
+        
+        # Get current image dimensions
+        img_height, img_width = self.image.shape[:2]
+        aspect_ratio = img_width / img_height
+        
+        # Initialize new dimensions
+        new_width = img_width
+        new_height = img_height
+        
+        # Calculate new dimensions to fit screen while maintaining aspect ratio
+        if img_width > screen_width or img_height > screen_height:
+            if aspect_ratio > screen_width / screen_height:
+                # Width limited
+                new_width = screen_width
+                new_height = int(screen_width / aspect_ratio)
+            else:
+                # Height limited
+                new_height = screen_height
+                new_width = int(screen_height * aspect_ratio)
+                
+            # Resize image
+            self.image = cv2.resize(self.image, (new_width, new_height))
             
         self.points = []
         self.current_points = []
@@ -16,7 +43,8 @@ class ParkingSpacePicker:
         self.spot_id = 0
         
         # Create window and set mouse callback
-        cv2.namedWindow('Parking Space Picker')
+        cv2.namedWindow('Parking Space Picker', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Parking Space Picker', new_width, new_height)
         cv2.setMouseCallback('Parking Space Picker', self.mouse_callback)
         
     def mouse_callback(self, event, x, y, flags, param):
@@ -230,7 +258,7 @@ class ParkingSpacePicker:
 
 if __name__ == "__main__":
     # Get first frame from video/RTSP stream
-    video_source = "rtsp://MirandaFam@123:MirandaFam@123@192.168.1.4:554/stream1"
+    video_source = "rtsp://matthew:123456789@172.20.10.11:554/stream1"
     cap = cv2.VideoCapture(video_source)
     
     if not cap.isOpened():
@@ -252,6 +280,28 @@ if __name__ == "__main__":
     if not ret:
         print("Error: Could not read frame")
         exit()
+    
+    # Get screen resolution
+    screen_width = 1280  # Default width
+    screen_height = 720  # Default height
+    
+    # Calculate aspect ratio
+    height, width = frame.shape[:2]
+    aspect_ratio = width / height
+    
+    # Calculate new dimensions to fit screen while maintaining aspect ratio
+    if width > screen_width or height > screen_height:
+        if aspect_ratio > screen_width / screen_height:
+            # Width limited
+            new_width = screen_width
+            new_height = int(screen_width / aspect_ratio)
+        else:
+            # Height limited
+            new_height = screen_height
+            new_width = int(screen_height * aspect_ratio)
+            
+        # Resize frame
+        frame = cv2.resize(frame, (new_width, new_height))
     
     # Save frame as image
     image_path = "parking_lot_frame.jpg"
